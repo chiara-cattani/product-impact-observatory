@@ -1,6 +1,8 @@
+Personal project with AI-generated data - example on a company
+
 # Product Impact Observatory (PIO)
 
-A Streamlit prototype demonstrating how Danone could collect real-world consumer data and generate continuous evidence on product health impact.
+A Streamlit prototype demonstrating how a company could collect real-world consumer data and generate continuous evidence on product health impact.
 
 ---
 
