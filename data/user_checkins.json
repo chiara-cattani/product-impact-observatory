@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-03-23",
+    "day_number": 1,
+    "user_name": "chiara",
+    "product": "Actimel Daily Probiotic",
+    "goal": "Boost energy",
+    "digestion_score": 3,
+    "energy_score": 5,
+    "symptoms": "Bloating",
+    "product_taken": false,
+    "notes": ""
+  },
+  {
+    "date": "2026-03-23",
+    "day_number": 2,
+    "user_name": "chiara",
+    "product": "Actimel Daily Probiotic",
+    "goal": "Boost energy",
+    "digestion_score": 5,
+    "energy_score": 5,
+    "symptoms": "Irregular digestion",
+    "product_taken": true,
+    "notes": ""
+  }
+]
