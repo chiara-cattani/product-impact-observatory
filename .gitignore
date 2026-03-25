@@ -1,6 +1,7 @@
 data/simulated_data.csv
 data/user_checkins.json
 __pycache__/
+**/__pycache__/
 *.pyc
 .env
 .DS_Store

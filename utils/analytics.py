@@ -2,152 +2,249 @@ import numpy as np
 import pandas as pd
 
 
+# ── Overview ───────────────────────────────────────────────────────────────────
+
 def compute_overview(df: pd.DataFrame) -> dict:
-    n_users = df["user_id"].nunique()
-    n_logs = len(df)
-    compliance = n_logs / (n_users * 30) * 100
+    n_users    = int(df["user_id"].nunique())
+    n_logs     = int(len(df))
+    n_days     = int(df["day_number"].max()) if n_users else 1
+    compliance = round(n_logs / max(n_users * n_days, 1) * 100, 1)
 
-    deltas = []
-    for _, grp in df.groupby("user_id"):
-        grp = grp.sort_values("day_number")
-        if len(grp) >= 5:
-            base = grp.head(3)["digestion_score"].mean()
-            curr = grp.tail(7)["digestion_score"].mean()
-            deltas.append(curr - base)
-
+    improvements = _per_user_delta(df, "digestion_score")
+    avg_delta    = round(float(np.mean(list(improvements.values()))), 2) if improvements else 0.0
+    pct_improved = round(
+        sum(1 for v in improvements.values() if v > 0.3) / max(len(improvements), 1) * 100, 1
+    )
     return {
-        "n_users": n_users,
-        "n_logs": n_logs,
-        "compliance_pct": round(compliance, 1),
-        "avg_improvement": round(float(np.mean(deltas)), 2) if deltas else 0.0,
-        "pct_improved": round(sum(1 for d in deltas if d > 0.3) / max(len(deltas), 1) * 100, 1),
+        "total_users":     n_users,
+        "total_logs":      n_logs,
+        "compliance_pct":  compliance,
+        "avg_improvement": avg_delta,
+        "pct_improved":    pct_improved,
     }
 
+
+# ── Trends ─────────────────────────────────────────────────────────────────────
 
 def compute_trends(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    t = (
+    trends = (
         df.groupby("date")
         .agg(
             avg_digestion=("digestion_score", "mean"),
             avg_energy=("energy_score", "mean"),
-            n_logs=("user_id", "count"),
+            daily_logs=("user_id", "count"),
         )
         .reset_index()
         .sort_values("date")
     )
-    t["dig_smooth"] = t["avg_digestion"].rolling(3, min_periods=1).mean()
-    t["eng_smooth"] = t["avg_energy"].rolling(3, min_periods=1).mean()
-    return t
+    trends["dig_smooth"] = trends["avg_digestion"].rolling(3, min_periods=1).mean()
+    trends["eng_smooth"] = trends["avg_energy"].rolling(3, min_periods=1).mean()
+    return trends
 
+
+def compute_day_trends(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate by study day (1-30) across all users."""
+    trends = (
+        df.groupby("day_number")
+        .agg(
+            avg_digestion=("digestion_score", "mean"),
+            avg_energy=("energy_score", "mean"),
+            n_users=("user_id", "nunique"),
+        )
+        .reset_index()
+        .sort_values("day_number")
+    )
+    trends["dig_smooth"] = trends["avg_digestion"].rolling(3, min_periods=1).mean()
+    trends["eng_smooth"] = trends["avg_energy"].rolling(3, min_periods=1).mean()
+    return trends
+
+
+# ── Improvement ────────────────────────────────────────────────────────────────
 
 def compute_improvement(df: pd.DataFrame) -> dict:
-    deltas = []
-    for _, grp in df.groupby("user_id"):
-        grp = grp.sort_values("day_number")
-        if len(grp) >= 5:
-            base = grp.head(3)["digestion_score"].mean()
-            curr = grp.tail(7)["digestion_score"].mean()
-            deltas.append(curr - base)
+    per_user  = {}
+    baselines = []
+    currents  = []
 
-    ba_rows = []
-    for prod, grp in df.groupby("product"):
-        early = grp[grp["day_number"] <= 5]["digestion_score"].mean()
-        late = grp[grp["day_number"] >= 25]["digestion_score"].mean()
-        ba_rows.append({
-            "product": prod,
-            "Before (Day 1-5)": round(early, 2),
-            "After (Day 25-30)": round(late, 2),
-        })
+    for uid, grp in df.groupby("user_id"):
+        grp = grp.sort_values("day_number")
+        if len(grp) < 4:
+            continue
+        baseline = float(grp.head(3)["digestion_score"].mean())
+        current  = float(grp.tail(7)["digestion_score"].mean())
+        delta    = current - baseline
+        per_user[uid] = {
+            "baseline": round(baseline, 2),
+            "current":  round(current, 2),
+            "delta":    round(delta, 2),
+            "improved": delta > 0.3,
+        }
+        baselines.append(baseline)
+        currents.append(current)
+
+    if not per_user:
+        return {
+            "per_user": {}, "avg_delta": 0.0, "pct_improved": 0.0,
+            "avg_baseline": 0.0, "avg_current": 0.0, "distribution": {},
+        }
+
+    deltas      = [v["delta"] for v in per_user.values()]
+    pct_improved = round(
+        sum(1 for v in per_user.values() if v["improved"]) / len(per_user) * 100, 1
+    )
+    bins = pd.cut(
+        deltas,
+        bins=[-3, -0.3, 0.3, 1.0, 3],
+        labels=["Declined", "No change", "Improved", "Strongly improved"],
+    )
+    dist = {str(k): int(v) for k, v in bins.value_counts().items()}
 
     return {
-        "avg_delta": round(float(np.mean(deltas)), 2) if deltas else 0.0,
-        "pct_improved": round(sum(1 for d in deltas if d > 0.3) / max(len(deltas), 1) * 100, 1),
-        "deltas": deltas,
-        "before_after": pd.DataFrame(ba_rows),
+        "per_user":     per_user,
+        "avg_delta":    round(float(np.mean(deltas)), 2),
+        "pct_improved": pct_improved,
+        "avg_baseline": round(float(np.mean(baselines)), 2),
+        "avg_current":  round(float(np.mean(currents)), 2),
+        "distribution": dist,
     }
 
+
+# ── Segmentation ───────────────────────────────────────────────────────────────
 
 def compute_segments(df: pd.DataFrame) -> dict:
     by_product = (
         df.groupby("product")
         .agg(
-            n_users=("user_id", "nunique"),
+            users=("user_id", "nunique"),
             avg_digestion=("digestion_score", "mean"),
             avg_energy=("energy_score", "mean"),
+            compliance=("product_taken", "mean"),
         )
         .reset_index()
     )
     by_product["avg_digestion"] = by_product["avg_digestion"].round(2)
-    by_product["avg_energy"] = by_product["avg_energy"].round(2)
+    by_product["avg_energy"]    = by_product["avg_energy"].round(2)
+    by_product["compliance"]    = (by_product["compliance"] * 100).round(1)
 
-    baselines = df.groupby("user_id")["baseline_digestion"].first().reset_index()
-    baselines["severity"] = pd.cut(
-        baselines["baseline_digestion"],
-        bins=[0, 2.0, 2.7, 5],
-        labels=["High severity (<=2.0)", "Moderate (2.0-2.7)", "Low severity (>2.7)"],
+    user_base = df.groupby("user_id")["baseline_digestion"].first().reset_index()
+    user_base["severity_group"] = pd.cut(
+        user_base["baseline_digestion"],
+        bins=[0, 2.0, 2.8, 5],
+        labels=["High severity", "Moderate", "Low severity"],
     )
-    merged = df.merge(baselines[["user_id", "severity"]], on="user_id")
-    by_sev = (
-        merged.groupby("severity", observed=True)
-        .agg(n_users=("user_id", "nunique"), avg_digestion=("digestion_score", "mean"))
-        .reset_index()
-    )
-    by_sev["avg_digestion"] = by_sev["avg_digestion"].round(2)
+    df_sev = df.merge(user_base[["user_id", "severity_group"]], on="user_id")
 
-    return {"by_product": by_product, "by_severity": by_sev}
+    deltas = []
+    for uid, grp in df_sev.groupby("user_id"):
+        grp = grp.sort_values("day_number")
+        if len(grp) < 4:
+            continue
+        sev  = grp["severity_group"].iloc[0]
+        base = float(grp.head(3)["digestion_score"].mean())
+        curr = float(grp.tail(7)["digestion_score"].mean())
+        deltas.append({"severity_group": sev, "delta": curr - base,
+                       "baseline": base, "current": curr})
+    sev_df = pd.DataFrame(deltas)
 
+    if not sev_df.empty:
+        by_severity = (
+            sev_df.groupby("severity_group", observed=True)
+            .agg(
+                n_users=("delta", "count"),
+                avg_delta=("delta", "mean"),
+                avg_baseline=("baseline", "mean"),
+                avg_current=("current", "mean"),
+            )
+            .reset_index()
+        )
+        for col in ["avg_delta", "avg_baseline", "avg_current"]:
+            by_severity[col] = by_severity[col].round(2)
+    else:
+        by_severity = pd.DataFrame()
+
+    return {"by_product": by_product, "by_severity": by_severity}
+
+
+# ── Symptom frequency ──────────────────────────────────────────────────────────
 
 def compute_symptom_freq(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for _, r in df.iterrows():
-        syms_val = r.get("symptoms", "")
-        if isinstance(syms_val, str) and syms_val:
-            week = min(int((r["day_number"] - 1) // 7) + 1, 4)
-            for s in syms_val.split("|"):
-                if s:
-                    rows.append({"symptom": s, "week": f"Week {week}"})
+    for _, row in df.iterrows():
+        if not row["symptoms"] or not isinstance(row["symptoms"], str):
+            continue
+        week = min(int((row["day_number"] - 1) // 7) + 1, 4)
+        for sym in row["symptoms"].split("|"):
+            if sym.strip():
+                rows.append({"symptom": sym.strip(), "week": f"Week {week}"})
     if not rows:
         return pd.DataFrame(columns=["symptom", "week", "count"])
-    sf = pd.DataFrame(rows)
-    return sf.groupby(["symptom", "week"]).size().reset_index(name="count")
+    sym_df = pd.DataFrame(rows)
+    return (
+        sym_df.groupby(["symptom", "week"])
+        .size()
+        .reset_index(name="count")
+        .sort_values(["week", "symptom"])
+    )
 
+
+# ── Insight generation ─────────────────────────────────────────────────────────
 
 def generate_insights(df: pd.DataFrame) -> list:
-    ov = compute_overview(df)
-    imp = compute_improvement(df)
-    trends = compute_trends(df)
+    ov   = compute_overview(df)
+    imp  = compute_improvement(df)
+    segs = compute_segments(df)
     insights = []
 
-    if imp["pct_improved"] > 60:
+    if imp["pct_improved"] >= 60:
         insights.append(
-            f"<b>{imp['pct_improved']:.0f}%</b> of participants show measurable digestion improvement over 30 days."
+            f"<b>{imp['pct_improved']:.0f}%</b> of participants show measurable digestion "
+            f"improvement over the study period."
         )
-    if imp["avg_delta"] > 0.4:
+    if imp["avg_delta"] >= 0.4:
         insights.append(
-            f"Average digestion score improved by <b>+{imp['avg_delta']:.1f} pts</b> on a 1-5 scale."
+            f"Average digestion score improved by <b>+{imp['avg_delta']:.1f} points</b> "
+            f"(scale 1-5), from {imp['avg_baseline']:.1f} to {imp['avg_current']:.1f}."
         )
-    if len(trends) > 10:
-        w1 = trends.head(7)["dig_smooth"].mean()
-        w4 = trends.tail(7)["dig_smooth"].mean()
-        if w4 - w1 > 0.3:
-            insights.append(
-                f"Population-level scores rose from <b>{w1:.1f}</b> (Week 1) to <b>{w4:.1f}</b> (Week 4)."
-            )
 
-    segs = compute_segments(df)
     sev = segs["by_severity"]
-    if len(sev) >= 2:
-        high = sev[sev["severity"].astype(str).str.startswith("High")]
-        if not high.empty:
+    if not sev.empty and "High severity" in sev["severity_group"].values:
+        hs = sev[sev["severity_group"] == "High severity"]["avg_delta"].values
+        ls_mask = sev["severity_group"] == "Low severity"
+        ls = sev[ls_mask]["avg_delta"].values if ls_mask.any() else [0]
+        if len(hs) and float(hs[0]) > float(ls[0]):
             insights.append(
-                "Participants with <b>high baseline severity</b> show the strongest relative improvement trajectory."
+                f"Dose-response pattern: high-severity participants improved by "
+                f"<b>+{float(hs[0]):.1f} pts</b> vs <b>+{float(ls[0]):.1f} pts</b> in low-severity group."
             )
 
-    if ov["compliance_pct"] > 75:
+    if ov["compliance_pct"] >= 80:
         insights.append(
-            f"<b>{ov['compliance_pct']:.0f}%</b> average daily compliance confirms strong user engagement with the product."
+            f"<b>{ov['compliance_pct']:.0f}%</b> daily compliance confirms strong product "
+            f"acceptance and habit formation."
         )
+
+    trends = compute_day_trends(df)
+    if len(trends) >= 14:
+        w1 = float(trends[trends["day_number"] <= 7]["avg_digestion"].mean())
+        w4 = float(trends[trends["day_number"] >= 22]["avg_digestion"].mean())
+        if w4 - w1 >= 0.3:
+            insights.append(
+                f"Population-level scores rose from <b>{w1:.1f}</b> (Week 1) to "
+                f"<b>{w4:.1f}</b> (Week 4), suggesting sustained efficacy."
+            )
 
     return insights
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _per_user_delta(df: pd.DataFrame, col: str) -> dict:
+    result = {}
+    for uid, grp in df.groupby("user_id"):
+        grp = grp.sort_values("day_number")
+        if len(grp) < 4:
+            continue
+        result[uid] = float(grp.tail(7)[col].mean()) - float(grp.head(3)[col].mean())
+    return result

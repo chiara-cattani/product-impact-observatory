@@ -1,28 +1,44 @@
 import streamlit as st
+from utils.data_manager import PRODUCTS, GOALS
 
-from utils.data_manager import GOALS, PRODUCTS
 
+def render_onboarding() -> None:
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#1B4F72 0%,#2E86AB 60%,#85C1E9 100%);
+                border-radius:20px;padding:2.5rem 1.5rem;text-align:center;margin-bottom:1.5rem;">
+        <div style="font-size:3.5rem;margin-bottom:0.5rem;">&#127807;</div>
+        <h1 style="color:white;font-size:1.7rem;margin:0 0 0.5rem 0;font-weight:800;">
+            Track how this product impacts you
+        </h1>
+        <p style="color:rgba(255,255,255,0.85);font-size:1rem;margin:0;">
+            Join consumers generating real-world health evidence
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-def render_onboarding():
-    st.markdown(
-        """
-        <div style="text-align:center;padding:2rem 0 1.5rem 0;">
-            <div style="font-size:3.5rem;">&#127807;</div>
-            <h1 style="font-size:1.9rem;font-weight:800;color:#1B4F72;margin:0.5rem 0 0.3rem 0;">
-                Track how this product impacts you
-            </h1>
-            <p style="color:#7F8C8D;font-size:1rem;margin:0;">
-                Join consumers generating real-world health evidence
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    col1, col2, col3 = st.columns(3)
+    for col, icon, label in zip(
+        [col1, col2, col3],
+        ["&#128202;", "&#128300;", "&#128154;"],
+        ["Track progress", "Contribute science", "See real results"],
+    ):
+        with col:
+            st.markdown(
+                f"<div style='text-align:center;padding:0.8rem;background:white;"
+                f"border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.07);'>"
+                f"<div style='font-size:1.6rem;'>{icon}</div>"
+                f"<div style='font-size:0.8rem;color:#5D6D7E;font-weight:600;margin-top:0.3rem;'>"
+                f"{label}</div></div>",
+                unsafe_allow_html=True,
+            )
 
-    with st.form("onboarding_form"):
-        name = st.text_input("Your first name", placeholder="e.g. Maria")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    with st.form("onboarding_form", clear_on_submit=False):
+        st.markdown("#### Tell us about yourself")
+        name    = st.text_input("Your first name", placeholder="e.g. Maria")
         product = st.selectbox("Product you are using", PRODUCTS)
-        goal = st.selectbox("Your main goal", GOALS)
+        goal    = st.selectbox("Your main health goal", GOALS)
 
         st.markdown("<br>", unsafe_allow_html=True)
         col_demo, col_start = st.columns(2)
@@ -32,18 +48,24 @@ def render_onboarding():
             submitted = st.form_submit_button("Start my journey", type="primary", use_container_width=True)
 
     if demo:
-        st.session_state.user_name = "Maria"
+        st.session_state.user_name    = "Maria"
         st.session_state.user_product = PRODUCTS[0]
-        st.session_state.user_goal = GOALS[0]
-        st.session_state.onboarded = True
+        st.session_state.user_goal    = GOALS[0]
+        st.session_state.onboarded    = True
         st.rerun()
 
     if submitted:
         if not name.strip():
-            st.error("Please enter your name.")
+            st.error("Please enter your first name to continue.")
         else:
-            st.session_state.user_name = name.strip()
+            st.session_state.user_name    = name.strip()
             st.session_state.user_product = product
-            st.session_state.user_goal = goal
-            st.session_state.onboarded = True
+            st.session_state.user_goal    = goal
+            st.session_state.onboarded    = True
             st.rerun()
+
+    st.markdown(
+        "<p style='text-align:center;color:#AEB6BF;font-size:0.78rem;margin-top:1.5rem;'>"
+        "Your data is used only to generate aggregated population insights.</p>",
+        unsafe_allow_html=True,
+    )

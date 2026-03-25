@@ -1,10 +1,9 @@
-import streamlit as st
-
 _TEMPLATE = (
     "This 30-day real-world evidence study across <b>{n_users} consumers</b> demonstrates consistent, "
     "measurable health benefits from daily product use. <b>{pct_improved}% of participants</b> showed "
     "meaningful improvement in digestion scores, with an average gain of <b>+{avg_delta} points</b> (scale 1-5). "
-    "Daily compliance reached <b>{compliance}%</b>, reflecting strong product acceptance across diverse consumer profiles. "
+    "Daily compliance reached <b>{compliance}%</b>, reflecting strong product acceptance and sustainable "
+    "habit formation across diverse consumer segments. "
     "Participants with higher baseline symptom severity exhibited the strongest improvement trajectories, "
     "suggesting a dose-response pattern consistent with the product's probiotic mechanism of action. "
     "These real-world outcomes provide robust, consumer-generated evidence to support regulatory submissions "
@@ -12,33 +11,39 @@ _TEMPLATE = (
 )
 
 
-@st.cache_data(show_spinner=False)
-def get_ai_summary(n_users: int, n_logs: int, compliance: float, pct_improved: float, avg_delta: float) -> str:
+def get_ai_summary(overview: dict, improvement: dict, api_key: str = "") -> str:
+    """Try Anthropic API; fall back gracefully to template."""
     try:
         import anthropic
 
-        client = anthropic.Anthropic()
+        key    = api_key.strip() or None
+        client = anthropic.Anthropic(**({"api_key": key} if key else {}))
+
         prompt = (
-            f"You are a health data scientist writing an executive summary for Danone leadership.\n\n"
-            f"30-day consumer study results:\n"
-            f"- {n_users} participants, {n_logs} total check-ins\n"
-            f"- {compliance}% daily compliance\n"
-            f"- {pct_improved}% of users showed digestion improvement\n"
-            f"- Average digestion score change: +{avg_delta} pts (scale 1-5)\n\n"
-            f"Write 3-4 sentences in a confident, data-driven tone. Highlight: (1) key outcome with numbers, "
-            f"(2) strength of evidence, (3) business or regulatory implication. "
-            f"Use <b>bold HTML tags</b> for key numbers."
+            "You are a senior health-data scientist writing a brief executive summary for "
+            "Danone leadership. Be data-driven, professional, and confident.\n\n"
+            f"Study data (30-day consumer panel, n={overview['total_users']}):\n"
+            f"- Total check-ins logged: {overview['total_logs']}\n"
+            f"- Daily compliance rate: {overview['compliance_pct']}%\n"
+            f"- Users showing digestion improvement: {improvement['pct_improved']}%\n"
+            f"- Average digestion score change: +{improvement['avg_delta']} pts (scale 1-5)\n"
+            f"- Baseline avg digestion score: {improvement['avg_baseline']}\n"
+            f"- End-of-study avg digestion score: {improvement['avg_current']}\n\n"
+            "Write 4-5 sentences covering: (1) key outcome with numbers, "
+            "(2) strength of evidence, (3) dose-response pattern, "
+            "(4) business or regulatory implication. "
+            "Use <b>bold HTML tags</b> for key numbers."
         )
         msg = client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=280,
+            model="claude-sonnet-4-6",
+            max_tokens=350,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text
     except Exception:
         return _TEMPLATE.format(
-            n_users=n_users,
-            pct_improved=pct_improved,
-            avg_delta=avg_delta,
-            compliance=compliance,
+            n_users=overview["total_users"],
+            pct_improved=improvement["pct_improved"],
+            avg_delta=improvement["avg_delta"],
+            compliance=overview["compliance_pct"],
         )

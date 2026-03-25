@@ -1,135 +1,156 @@
 import json
-from datetime import date, timedelta
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import streamlit as st
+from datetime import date, timedelta
+from pathlib import Path
 
 PRODUCTS = [
     "Activia Probiotic Yogurt",
     "Actimel Daily Probiotic",
-    "Nutricia Fortimel",
+    "Nutricia Fortijuice",
 ]
+
 GOALS = [
     "Improve digestion",
     "Boost energy",
-    "Reduce bloating",
     "Strengthen immunity",
+    "Reduce bloating",
 ]
+
 SYMPTOMS = [
     "Bloating",
     "Abdominal discomfort",
     "Fatigue",
     "Irregular digestion",
     "Low energy",
+    "Nausea",
 ]
 
-DATA_DIR = Path(__file__).parent.parent / "data"
-SIM_FILE = DATA_DIR / "simulated_data.csv"
-CHECKINS_FILE = DATA_DIR / "user_checkins.json"
+DATA_DIR  = Path(__file__).parent.parent / "data"
+SIM_FILE  = DATA_DIR / "simulated_data.csv"
+USER_FILE = DATA_DIR / "user_checkins.json"
 
 
-def init_session_state():
+# ── Session state ──────────────────────────────────────────────────────────────
+
+def init_session_state() -> None:
     defaults = {
-        "onboarded": False,
-        "user_name": "",
-        "user_product": PRODUCTS[0],
-        "user_goal": GOALS[0],
-        "user_id": f"live_{date.today().isoformat()}",
-        "checkins": [],
+        "onboarded":       False,
+        "user_name":       "",
+        "user_product":    PRODUCTS[0],
+        "user_goal":       GOALS[0],
+        "checkins":        [],
         "today_submitted": False,
+        "demo_mode":       True,
+        "api_key":         "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 
-def save_checkin(entry: dict):
-    st.session_state.checkins.append(entry)
+# ── Check-in persistence ───────────────────────────────────────────────────────
+
+def save_checkin(checkin: dict) -> None:
+    st.session_state.checkins.append(checkin)
     try:
-        DATA_DIR.mkdir(exist_ok=True)
-        existing = []
-        if CHECKINS_FILE.exists():
-            existing = json.loads(CHECKINS_FILE.read_text())
-        existing.append({k: str(v) if not isinstance(v, (str, int, float, bool, list)) else v
-                         for k, v in entry.items()})
-        CHECKINS_FILE.write_text(json.dumps(existing, indent=2, default=str))
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        existing: list = []
+        if USER_FILE.exists():
+            existing = json.loads(USER_FILE.read_text(encoding="utf-8"))
+        existing.append({**checkin, "date": str(checkin["date"])})
+        USER_FILE.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
     except Exception:
         pass
 
 
-def get_user_df() -> pd.DataFrame:
-    if not st.session_state.checkins:
-        return pd.DataFrame()
-    return pd.DataFrame(st.session_state.checkins)
+def load_checkins() -> list:
+    if USER_FILE.exists():
+        try:
+            return json.loads(USER_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
 
 
-def get_sim_df() -> pd.DataFrame:
-    DATA_DIR.mkdir(exist_ok=True)
+# ── Simulated data ─────────────────────────────────────────────────────────────
+
+def get_simulated_data() -> pd.DataFrame:
     if SIM_FILE.exists():
-        return pd.read_csv(SIM_FILE)
-    df = _generate_sim_data()
-    df.to_csv(SIM_FILE, index=False)
+        try:
+            df = pd.read_csv(SIM_FILE)
+            df["date"] = pd.to_datetime(df["date"])
+            return df
+        except Exception:
+            pass
+    return _generate_and_save()
+
+
+def _generate_and_save() -> pd.DataFrame:
+    df = _generate_simulated_data()
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        df.to_csv(SIM_FILE, index=False)
+    except Exception:
+        pass
     return df
 
 
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-6.0 * (x - 0.5)))
-
-
-def _generate_sim_data() -> pd.DataFrame:
+def _generate_simulated_data(n_users: int = 25, n_days: int = 30) -> pd.DataFrame:
     rng = np.random.default_rng(42)
-    today = date.today()
-    start = today - timedelta(days=29)
+    start_date = date.today() - timedelta(days=n_days - 1)
 
-    product_dist = [PRODUCTS[0]] * 11 + [PRODUCTS[1]] * 9 + [PRODUCTS[2]] * 5
-    goal_dist = [GOALS[0]] * 10 + [GOALS[1]] * 8 + [GOALS[2]] * 4 + [GOALS[3]] * 3
+    user_profiles = []
+    for i in range(1, n_users + 1):
+        user_profiles.append({
+            "user_id":         f"U{i:03d}",
+            "user_name":       f"Participant {i:02d}",
+            "product":         PRODUCTS[i % len(PRODUCTS)],
+            "goal":            GOALS[i % len(GOALS)],
+            "baseline_dig":    float(rng.uniform(1.5, 3.0)),
+            "baseline_eng":    float(rng.uniform(1.5, 3.0)),
+            "max_improvement": float(rng.uniform(1.2, 2.2)),
+            "compliance":      float(rng.uniform(0.72, 0.97)),
+        })
 
     records = []
-    for i in range(25):
-        uid = f"U{i + 1:03d}"
-        product = product_dist[i]
-        goal = goal_dist[i]
-        baseline_dig = rng.uniform(1.4, 2.8)
-        baseline_eng = rng.uniform(1.6, 2.9)
-        max_imp_dig = rng.uniform(1.2, 2.1)
-        max_imp_eng = rng.uniform(0.9, 1.7)
-        compliance = rng.uniform(0.70, 0.96)
-
-        for day in range(30):
-            if rng.random() > compliance:
+    for u in user_profiles:
+        for day in range(n_days):
+            if rng.random() > u["compliance"]:
                 continue
-            current_date = start + timedelta(days=day)
-            progress = day / 29.0
-            imp = float(_sigmoid(np.array([progress]))[0] - _sigmoid(np.array([0.0]))[0])
+            progress    = (day / (n_days - 1)) ** 0.65
+            improvement = progress * u["max_improvement"]
 
-            dig = float(np.clip(baseline_dig + imp * max_imp_dig + rng.normal(0, 0.35), 1.0, 5.0))
-            eng = float(np.clip(baseline_eng + imp * max_imp_eng + rng.normal(0, 0.35), 1.0, 5.0))
+            dig = float(np.clip(
+                u["baseline_dig"] + improvement + rng.normal(0, 0.35), 1.0, 5.0
+            ))
+            eng = float(np.clip(
+                u["baseline_eng"] + improvement * 0.85 + rng.normal(0, 0.35), 1.0, 5.0
+            ))
 
-            syms = []
-            if baseline_dig < 2.2 and day < 18:
-                if rng.random() > 0.45:
-                    syms.append("Bloating")
-                if rng.random() > 0.55:
-                    syms.append("Abdominal discomfort")
-            if baseline_eng < 2.2 and day < 20:
-                if rng.random() > 0.5:
-                    syms.append("Fatigue")
+            symptom_list = []
+            if day < 15:
+                symp_prob = max(0, (3.0 - dig) / 4.0)
+                for sym in ["Bloating", "Abdominal discomfort", "Fatigue", "Irregular digestion"]:
+                    if rng.random() < symp_prob:
+                        symptom_list.append(sym)
 
             records.append({
-                "user_id": uid,
-                "user_name": f"Participant {i + 1}",
-                "product": product,
-                "goal": goal,
-                "date": current_date.isoformat(),
-                "day_number": day + 1,
-                "digestion_score": round(dig, 2),
-                "energy_score": round(eng, 2),
-                "symptoms": "|".join(syms),
-                "product_taken": bool(rng.random() > 0.08),
-                "baseline_digestion": round(baseline_dig, 2),
-                "baseline_energy": round(baseline_eng, 2),
+                "user_id":            u["user_id"],
+                "user_name":          u["user_name"],
+                "product":            u["product"],
+                "goal":               u["goal"],
+                "date":               (start_date + timedelta(days=day)).isoformat(),
+                "day_number":         day + 1,
+                "digestion_score":    round(dig, 2),
+                "energy_score":       round(eng, 2),
+                "symptoms":           "|".join(symptom_list),
+                "product_taken":      bool(rng.random() > 0.08),
+                "baseline_digestion": round(u["baseline_dig"], 2),
+                "baseline_energy":    round(u["baseline_eng"], 2),
             })
 
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    return df

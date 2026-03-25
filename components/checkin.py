@@ -1,186 +1,213 @@
 from datetime import date
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.data_manager import SYMPTOMS, get_user_df, save_checkin
+from utils.data_manager import SYMPTOMS, save_checkin
 
-_LABELS = {1: "Very poor", 2: "Poor", 3: "Okay", 4: "Good", 5: "Great"}
-_EMOJI = {1: "😣", 2: "😕", 3: "😐", 4: "🙂", 5: "😄"}
+_SCORE_EMOJI  = {1: "&#128543;", 2: "&#128533;", 3: "&#128528;", 4: "&#128522;", 5: "&#128522;"}
+_SCORE_COLOR  = {1: "#E74C3C", 2: "#E67E22", 3: "#F1C40F", 4: "#2ECC71", 5: "#27AE60"}
+_SCORE_LABEL  = {1: "1  Very poor", 2: "2  Poor", 3: "3  Okay", 4: "4  Good", 5: "5  Great"}
 
 
-def render_checkin():
-    name = st.session_state.user_name
-    product = st.session_state.user_product
-    goal = st.session_state.user_goal
-    day_num = len(st.session_state.checkins) + 1
+def render_checkin() -> None:
+    name       = st.session_state.user_name
+    product    = st.session_state.user_product
+    goal       = st.session_state.user_goal
+    day_number = len(st.session_state.checkins) + 1
 
     st.markdown(
-        f"""
-        <div style="background:linear-gradient(135deg,#1B4F72,#2E86AB);
-                    color:white;border-radius:16px;padding:1.5rem;
-                    margin-bottom:1.2rem;text-align:center;">
-            <div style="font-size:2rem;">&#128075;</div>
-            <div style="font-size:1.5rem;font-weight:800;">Hi, {name}!</div>
-            <div style="font-size:0.9rem;opacity:0.85;margin-top:0.3rem;">
-                {product} &nbsp;&middot;&nbsp; Goal: {goal}
-            </div>
-            <div style="margin-top:0.8rem;background:rgba(255,255,255,0.2);
-                        border-radius:20px;padding:0.3rem 1rem;display:inline-block;
-                        font-size:0.85rem;font-weight:600;">
-                Day {day_num} of your journey
-            </div>
-        </div>
-        """,
+        f"<div style='background:linear-gradient(135deg,#1B4F72 0%,#2E86AB 100%);"
+        f"border-radius:16px;padding:1.4rem 1.5rem;margin-bottom:1.2rem;"
+        f"display:flex;align-items:center;gap:1rem;'>"
+        f"<div style='font-size:2.4rem;'>&#128075;</div>"
+        f"<div>"
+        f"<div style='color:rgba(255,255,255,0.7);font-size:0.85rem;font-weight:600;'>WELCOME BACK</div>"
+        f"<div style='color:white;font-size:1.3rem;font-weight:800;'>{name}</div>"
+        f"<div style='color:rgba(255,255,255,0.8);font-size:0.88rem;margin-top:0.2rem;'>"
+        f"{product} &nbsp;&middot;&nbsp; Day {day_number}</div>"
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
-    tab_today, tab_history = st.tabs(["Today's Check-in", "My Progress"])
-
+    tab_today, tab_history = st.tabs(["Today's Check-in", "My History"])
     with tab_today:
-        _render_form(day_num)
-
+        _render_today()
     with tab_history:
         _render_history()
 
 
-def _render_form(day_num: int):
+def _render_today() -> None:
     if st.session_state.today_submitted:
-        st.success("Check-in submitted! Thank you for contributing to real-world research.")
-        st.markdown(
-            """
-            <div style="background:#EBF5FB;border-radius:12px;padding:1.5rem;text-align:center;margin-top:1rem;">
-                <div style="font-size:2.5rem;">&#128300;</div>
-                <div style="font-weight:700;color:#1B4F72;font-size:1.1rem;margin-top:0.5rem;">
-                    Your data is helping build evidence
-                </div>
-                <div style="color:#5D6D7E;font-size:0.9rem;margin-top:0.4rem;">
-                    Come back tomorrow for your next check-in
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button("Submit another entry (demo)", use_container_width=True):
+        st.markdown("""
+        <div style="text-align:center;padding:2.5rem 1rem;
+                    background:linear-gradient(135deg,#EAF9EA 0%,#D5F5E3 100%);
+                    border-radius:16px;margin-top:1rem;">
+            <div style="font-size:3.5rem;">&#127881;</div>
+            <h2 style="color:#1E8449;margin:0.5rem 0;">Check-in complete!</h2>
+            <p style="color:#27AE60;font-size:1rem;margin:0;">
+                Thanks! You are contributing to real-world research.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(
+                "<div style='background:white;border-radius:12px;padding:1rem;"
+                "box-shadow:0 2px 8px rgba(0,0,0,0.07);text-align:center;'>"
+                "<div style='font-size:1.8rem;'>&#127885;</div>"
+                "<div style='font-weight:700;color:#1B4F72;margin-top:0.4rem;'>Streak kept!</div>"
+                "<div style='font-size:0.85rem;color:#7F8C8D;'>Keep it up</div></div>",
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.markdown(
+                "<div style='background:white;border-radius:12px;padding:1rem;"
+                "box-shadow:0 2px 8px rgba(0,0,0,0.07);text-align:center;'>"
+                "<div style='font-size:1.8rem;'>&#128300;</div>"
+                "<div style='font-weight:700;color:#1B4F72;margin-top:0.4rem;'>Data recorded</div>"
+                "<div style='font-size:0.85rem;color:#7F8C8D;'>Powering insights</div></div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Log another day (demo)", use_container_width=True):
             st.session_state.today_submitted = False
             st.rerun()
         return
 
     with st.form("checkin_form"):
         st.markdown("#### How is your digestion today?")
-        dig = st.select_slider(
-            "Digestion",
+        dig_score = st.select_slider(
+            "Digestion score",
             options=[1, 2, 3, 4, 5],
-            format_func=lambda x: f"{_EMOJI[x]} {_LABELS[x]}",
             value=3,
+            format_func=lambda x: _SCORE_LABEL[x],
             label_visibility="collapsed",
         )
+        _score_bar(dig_score)
 
-        st.markdown("#### How is your energy level?")
-        eng = st.select_slider(
-            "Energy",
+        st.markdown("---")
+        st.markdown("#### Energy level")
+        eng_score = st.select_slider(
+            "Energy score",
             options=[1, 2, 3, 4, 5],
-            format_func=lambda x: f"{_EMOJI[x]} {_LABELS[x]}",
             value=3,
+            format_func=lambda x: _SCORE_LABEL[x],
             label_visibility="collapsed",
         )
+        _score_bar(eng_score)
 
+        st.markdown("---")
         st.markdown("#### Any symptoms today? *(optional)*")
+        selected_symptoms = []
         cols = st.columns(2)
-        selected_syms = []
-        for idx, sym in enumerate(SYMPTOMS):
-            with cols[idx % 2]:
+        for i, sym in enumerate(SYMPTOMS):
+            with cols[i % 2]:
                 if st.checkbox(sym, key=f"sym_{sym}"):
-                    selected_syms.append(sym)
+                    selected_symptoms.append(sym)
 
-        st.markdown("#### Did you take the product today?")
-        taken = st.radio(
-            "Taken",
+        st.markdown("---")
+        st.markdown("#### Did you take your product today?")
+        product_taken = st.radio(
+            "Product taken",
             ["Yes", "No"],
             horizontal=True,
             label_visibility="collapsed",
         )
 
         notes = st.text_area(
-            "Notes (optional)",
-            placeholder="How are you feeling overall?",
-            height=80,
+            "Additional notes *(optional)*",
+            placeholder="How are you feeling? Any observations...",
+            max_chars=300,
         )
 
+        st.markdown("<br>", unsafe_allow_html=True)
         submitted = st.form_submit_button(
-            "Submit today's check-in", type="primary", use_container_width=True
+            "Submit today's check-in", use_container_width=True, type="primary"
         )
 
     if submitted:
-        checkins = st.session_state.checkins
-        entry = {
-            "user_id": st.session_state.user_id,
-            "user_name": st.session_state.user_name,
-            "product": st.session_state.user_product,
-            "goal": st.session_state.user_goal,
-            "date": date.today().isoformat(),
-            "day_number": day_num,
-            "digestion_score": dig,
-            "energy_score": eng,
-            "symptoms": "|".join(selected_syms),
-            "product_taken": taken == "Yes",
-            "notes": notes,
-            "baseline_digestion": checkins[0]["digestion_score"] if checkins else dig,
-            "baseline_energy": checkins[0]["energy_score"] if checkins else eng,
+        checkin = {
+            "date":            str(date.today()),
+            "day_number":      len(st.session_state.checkins) + 1,
+            "user_name":       st.session_state.user_name,
+            "product":         st.session_state.user_product,
+            "goal":            st.session_state.user_goal,
+            "digestion_score": dig_score,
+            "energy_score":    eng_score,
+            "symptoms":        "|".join(selected_symptoms),
+            "product_taken":   product_taken == "Yes",
+            "notes":           notes.strip(),
         }
-        save_checkin(entry)
+        save_checkin(checkin)
         st.session_state.today_submitted = True
         st.rerun()
 
 
-def _render_history():
-    df = get_user_df()
-    if df.empty:
-        st.info("No entries yet. Complete your first check-in to see your progress here.")
+def _score_bar(score: int) -> None:
+    color = _SCORE_COLOR[score]
+    pct   = score / 5 * 100
+    st.markdown(
+        f"<div style='background:#ECF0F1;border-radius:8px;height:8px;margin:0.4rem 0 1rem 0;'>"
+        f"<div style='background:{color};width:{pct}%;height:100%;border-radius:8px;'></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_history() -> None:
+    checkins = st.session_state.checkins
+    if not checkins:
+        st.info("No check-ins yet. Complete your first daily check-in to see your progress here.")
         return
 
+    df = pd.DataFrame(checkins)
+    df["day_number"]      = df["day_number"].astype(int)
+    df["digestion_score"] = df["digestion_score"].astype(float)
+    df["energy_score"]    = df["energy_score"].astype(float)
+    df = df.sort_values("day_number")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Days logged", len(df))
+    with c2:
+        st.metric("Avg digestion", f"{df['digestion_score'].mean():.1f} / 5")
+    with c3:
+        st.metric("Avg energy", f"{df['energy_score'].mean():.1f} / 5")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=df["day_number"],
-            y=df["digestion_score"],
-            mode="lines+markers",
-            name="Digestion",
-            line=dict(color="#2E86AB", width=2.5),
-            marker=dict(size=8),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["day_number"],
-            y=df["energy_score"],
-            mode="lines+markers",
-            name="Energy",
-            line=dict(color="#27AE60", width=2.5, dash="dot"),
-            marker=dict(size=8),
-        )
-    )
+    fig.add_trace(go.Scatter(
+        x=df["day_number"], y=df["digestion_score"],
+        name="Digestion", mode="lines+markers",
+        line=dict(color="#2E86AB", width=2.5), marker=dict(size=7),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["day_number"], y=df["energy_score"],
+        name="Energy", mode="lines+markers",
+        line=dict(color="#F39C12", width=2.5, dash="dot"), marker=dict(size=7),
+    ))
     fig.update_layout(
-        title="Your scores over time",
-        xaxis_title="Day",
-        yaxis=dict(range=[0.5, 5.5], tickvals=[1, 2, 3, 4, 5], title="Score"),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        legend=dict(orientation="h", y=-0.25),
-        margin=dict(l=10, r=10, t=40, b=10),
+        title="Your personal trend",
+        xaxis_title="Study day",
+        yaxis=dict(range=[0.5, 5.5], dtick=1, title="Score (1-5)"),
         height=320,
+        margin=dict(l=10, r=10, t=40, b=10),
+        legend=dict(orientation="h", y=-0.25),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
     )
+    fig.update_xaxes(showgrid=True, gridcolor="#ECF0F1")
+    fig.update_yaxes(showgrid=True, gridcolor="#ECF0F1")
     st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("View all entries"):
-        st.dataframe(
-            df[["date", "day_number", "digestion_score", "energy_score", "symptoms", "product_taken"]]
-            .rename(columns={
-                "day_number": "Day",
-                "digestion_score": "Digestion",
-                "energy_score": "Energy",
-                "symptoms": "Symptoms",
-                "product_taken": "Product taken",
-            }),
-            use_container_width=True,
+        display = df[["day_number", "date", "digestion_score", "energy_score", "symptoms"]].copy()
+        display.columns = ["Day", "Date", "Digestion", "Energy", "Symptoms"]
+        display["Symptoms"] = display["Symptoms"].apply(
+            lambda s: s.replace("|", ", ") if isinstance(s, str) and s else "-"
         )
+        st.dataframe(display, use_container_width=True, hide_index=True)
