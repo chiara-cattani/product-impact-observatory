@@ -41,18 +41,7 @@ def render_onboarding() -> None:
         goal    = st.selectbox("Your main health goal", GOALS)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        col_demo, col_start = st.columns(2)
-        with col_demo:
-            demo = st.form_submit_button("Quick demo fill", use_container_width=True)
-        with col_start:
-            submitted = st.form_submit_button("Start my journey", type="primary", use_container_width=True)
-
-    if demo:
-        st.session_state.user_name    = "Maria"
-        st.session_state.user_product = PRODUCTS[0]
-        st.session_state.user_goal    = GOALS[0]
-        st.session_state.onboarded    = True
-        st.rerun()
+        submitted = st.form_submit_button("Start my journey", type="primary", use_container_width=True)
 
     if submitted:
         if not name.strip():
